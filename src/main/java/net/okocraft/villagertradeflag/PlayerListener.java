@@ -1,5 +1,14 @@
 package net.okocraft.villagertradeflag;
 
+import com.sk89q.worldedit.util.formatting.text.BlockNbtComponent;
+import com.sk89q.worldedit.util.formatting.text.Component;
+import com.sk89q.worldedit.util.formatting.text.ComponentBuilder;
+import com.sk89q.worldedit.util.formatting.text.KeybindComponent;
+import com.sk89q.worldedit.util.formatting.text.NbtComponent;
+import com.sk89q.worldedit.util.formatting.text.SelectorComponent;
+import com.sk89q.worldedit.util.formatting.text.TextComponent;
+import com.sk89q.worldedit.util.formatting.text.TranslatableComponent;
+import com.sk89q.worldedit.util.formatting.text.serializer.gson.GsonComponentSerializer;
 import java.util.Arrays;
 import java.util.List;
 
@@ -62,12 +71,12 @@ public class PlayerListener extends AbstractListener {
         RegionQuery query = WorldGuard.getInstance().getPlatform().getRegionContainer().createQuery();
         State state = query.queryState(BukkitAdapter.adapt(target), associable, combine(event, plugin.getVillagerTradeFlag()));
         if (state != State.ALLOW) {
-            tellErrorMessage(event, event.getCause(), target, "use that");
+            tellErrorMessage(event, event.getCause(), target, TranslatableComponent.of("worldguard.error.denied.what.use-that"));
             event.setCancelled(true);
         }
     }
 
-    private void tellErrorMessage(DelegateEvent event, Cause cause, Location location, String what) {
+    private void tellErrorMessage(DelegateEvent event, Cause cause, Location location, TranslatableComponent what) {
         if (event.isSilent() || cause.isIndirect()) {
             return;
         }
@@ -82,19 +91,56 @@ public class PlayerListener extends AbstractListener {
             if (lastTime == null || now - lastTime >= LAST_MESSAGE_DELAY) {
                 RegionQuery query = WorldGuard.getInstance().getPlatform().getRegionContainer().createQuery();
                 LocalPlayer localPlayer = getPlugin().wrapPlayer(player);
-                String message = query.queryValue(BukkitAdapter.adapt(location), localPlayer, Flags.DENY_MESSAGE);
+                Component message = (Component) query.queryValue(
+                        BukkitAdapter.adapt(location),
+                        localPlayer,
+                        Flags.fuzzyMatchFlag(WorldGuard.getInstance().getFlagRegistry(), "deny-message-component")
+                );
                 formatAndSendDenyMessage(what, localPlayer, message);
                 WGMetadata.put(player, DENY_MESSAGE_KEY, now);
             }
         }
     }
 
-    static void formatAndSendDenyMessage(String what, LocalPlayer localPlayer, String message) {
-        if (message == null || message.isEmpty()) return;
-        message = WorldGuard.getInstance().getPlatform().getMatcher().replaceMacros(localPlayer, message);
-        message = CommandUtils.replaceColorMacros(message);
-        localPlayer.printRaw(message.replace("%what%", what));
+    static void formatAndSendDenyMessage(TranslatableComponent what, LocalPlayer localPlayer, Component message) {
+        if (message == null) return;
+
+        String str = GsonComponentSerializer.INSTANCE.serialize(putTranslatableArgs(message, what));
+        localPlayer.print(GsonComponentSerializer.INSTANCE.deserialize(CommandUtils.replaceColorMacros(
+                WorldGuard.getInstance().getPlatform().getMatcher().replaceMacros(localPlayer, str))));
     }
+
+    private static ComponentBuilder<?, ?> toBuilder(Component component) {
+        if (component instanceof BlockNbtComponent) {
+            return ((TextComponent) component).toBuilder();
+        } else if (component instanceof NbtComponent) {
+            return ((NbtComponent<?, ?>) component).toBuilder();
+        } else if (component instanceof KeybindComponent) {
+            return ((KeybindComponent) component).toBuilder();
+        } else if (component instanceof SelectorComponent) {
+            return ((SelectorComponent) component).toBuilder();
+        } else if (component instanceof TextComponent) {
+            return ((TextComponent) component).toBuilder();
+        } else if (component instanceof TranslatableComponent) {
+            return ((TranslatableComponent) component).toBuilder();
+        } else {
+            return null;
+        }
+    }
+
+    private static Component putTranslatableArgs(Component component, Component... args) {
+        ComponentBuilder<?, ?> builder = toBuilder(component);
+        if (builder == null) return component;
+
+        return builder.mapChildrenDeep(c -> {
+            if (c instanceof TranslatableComponent) {
+                return ((TranslatableComponent) c).args(args);
+            } else {
+                return c;
+            }
+        }).build();
+    }
+
 
     private boolean isWhitelisted(Cause cause, World world, boolean pvp) {
         Object rootCause = cause.getRootCause();
