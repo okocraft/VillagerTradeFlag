@@ -18,13 +18,33 @@ public class Main extends JavaPlugin {
 
     @Override
     public void onLoad() {
-        villagerTradeFlag = registerStateFlag("villager-trade", false, RegionGroup.NON_MEMBERS);
+        villagerTradeFlag = registerStateFlag("villager-trade", true, RegionGroup.ALL, true);
     }
 
-    private StateFlag registerStateFlag(String name, boolean def, RegionGroup group) {
+    private StateFlag registerStateFlag(String name, boolean def, RegionGroup group, boolean membershopAsDefault) {
         FlagRegistry registry = WorldGuard.getInstance().getFlagRegistry();
         try {
-            StateFlag flag = new StateFlag(name, def, group);
+            StateFlag flag = new StateFlag(name, def, group) {
+                @Override
+                public boolean implicitlySetWithMembership() {
+                    return membershopAsDefault;
+                }
+
+                @Override
+                public boolean usesMembershipAsDefault() {
+                    return membershopAsDefault;
+                }
+
+                @Override
+                public boolean preventsAllowOnGlobal() {
+                    return membershopAsDefault;
+                }
+
+                @Override
+                public boolean requiresSubject() {
+                    return membershopAsDefault;
+                }
+            };
             registry.register(flag);
             return flag;
         } catch (FlagConflictException | IllegalStateException e) {
